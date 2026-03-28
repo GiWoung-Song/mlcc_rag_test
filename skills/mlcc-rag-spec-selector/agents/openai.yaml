@@ -1,0 +1,4 @@
+interface:
+  display_name: "Samsung MLCC RAG Selector"
+  short_description: "SEMCO catalog-based MLCC preselection"
+  default_prompt: "Use $mlcc-rag-spec-selector to turn a Korean or English customer MLCC requirement into catalog-based candidates, candidate skeletons, and validation points."
