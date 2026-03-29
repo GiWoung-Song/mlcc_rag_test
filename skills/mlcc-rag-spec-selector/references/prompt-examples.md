@@ -8,6 +8,7 @@ Use these examples when invoking the skill from Korean, English, or mixed-langua
 - Reliability and Family Selection
 - Candidate Comparison
 - Part-Number Skeleton Review
+- Active Lineup Interaction
 - Guardrailed Validation Requests
 
 ## Spec Preselection
@@ -78,9 +79,32 @@ Expected behavior:
 - refuse to fabricate unresolved 8th-11th codes
 - state which chunk types support the interpretation
 
-## Guardrailed Validation Requests
+## Active Lineup Interaction
 
 ### Example 7
+
+`지금 조건으로 딱 하나로 못 정하면 괜찮아. 일단 부분 코드만 만들어서 현재 흐르는 품목이 있는지 보여줘. 예를 들면 CL32_106_O____ 같은 식으로 검색해서 리스트를 먼저 보고 싶어.`
+
+Expected behavior:
+
+- derive the strongest catalog-backed partial pattern first
+- run the active-lineup DB lookup with `chip_prod_id`
+- show the returned list before forcing a single selection
+- ask one targeted follow-up question
+
+### Example 8
+
+`CL32_106_O____ 패턴으로 현행품을 찾아서 리스트를 보여주고, 그 다음 어떤 조건이 더 필요할지 질문해줘.`
+
+Expected behavior:
+
+- treat the user string as a DB-facing pattern request
+- use the current-product lookup tool if available
+- continue the dialogue based on returned hits, not on a guessed final P/N
+
+## Guardrailed Validation Requests
+
+### Example 9
 
 `이 후보가 1V DC 바이어스에서 반드시 3.45uF 이상인지 보장해줘.`
 

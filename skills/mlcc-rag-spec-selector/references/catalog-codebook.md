@@ -12,6 +12,7 @@ Use this reference when mapping user constraints to SEMCO MLCC catalog concepts 
 - Capacitance Code and Nominal Rules
 - Reliability and Family Routing
 - Part-Number Skeleton Policy
+- Active Lineup Pattern Policy
 - Catalog Anomalies
 
 ## Source Scope
@@ -228,6 +229,22 @@ Allowed forms:
 - `CL03A515MR3[design TBD][product code TBD][control TBD][packaging TBD]`
 
 Do not collapse unresolved fields into a fabricated full P/N.
+
+## Active Lineup Pattern Policy
+
+Use a separate DB-facing pattern when checking current products by `chip_prod_id`.
+
+Rules:
+
+- keep known literal code positions
+- replace unknown single-character positions with `_`
+- use `%` only when the DB lookup tool expects SQL-like variable-length matching
+
+Examples:
+
+- `CL32_106_O____`
+- `%CL32_106_O____%`
+- `CL03A515MR3____`
 
 ## Catalog Anomalies
 
