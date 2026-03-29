@@ -9,8 +9,8 @@ Reference LOT을 기준으로 DOE 시뮬레이션을 오케스트레이션한다
 
 필요할 때 아래 reference를 읽는다.
 
-- `references/tool-contracts.md`: `check_optimal_design`, `optimal_design`의 입력/출력 계약
-- `references/workflow-details.md`: 상태 관리, 질문 순서, payload 조립, rerun 규칙
+- `references/tool-contracts.md`: `check_optimal_design`, `optimal_design`, `search_rag` (공정검사표준)의 입력/출력 계약
+- `references/workflow-details.md`: 상태 관리, 질문 순서, payload 조립, params 값 형식, rerun 규칙
 - `references/prompt-examples.md`: 한국어 사용자 질의와 응답 패턴
 
 ## 핵심 원칙
@@ -19,6 +19,8 @@ Reference LOT을 기준으로 DOE 시뮬레이션을 오케스트레이션한다
 - `lot_id`가 새로 들어오면 반드시 먼저 `check_optimal_design`을 호출한다.
 - `check_optimal_design` 결과에 `부족인자`가 있으면 `optimal_design`을 호출하지 않는다.
 - `targets.*`와 `params.*`는 현재 기준으로 `절대값` payload를 우선 사용한다.
+- 초기 실행의 `params.*`는 ref lot 기준 ±범위의 다중 포인트 리스트이고, rerun의 `params.*`는 단일 값 `[value]` 리스트이다. 자세한 규칙은 `references/workflow-details.md`를 참조한다.
+- 시뮬레이션 결과를 사용자에게 제시하기 전에, `search_rag`로 공정검사표준을 검색해 각 설계값이 표준 범위 안에 있는지 확인한다. 표준을 벗어나는 값이 있으면 경고와 함께 제시한다.
 - 이미 알고 있는 값은 다시 묻지 않는다.
 - 사용자가 `3번째 후보에서 Sheet T만 5.2`처럼 말하면 최신 top 5 결과에서 해당 후보를 base로 삼고, 지정한 필드만 override해서 다시 실행한다.
 - 현재 대화에 최신 top 5 결과가 없는데 사용자가 `3번째 후보`처럼 참조하면 어느 run의 후보인지 먼저 확인한다.
@@ -29,11 +31,12 @@ Reference LOT을 기준으로 DOE 시뮬레이션을 오케스트레이션한다
 2. `check_optimal_design` 실행
 3. `충족인자`, `부족인자` 해석
 4. reference가 유효하면 `targets.*` 수집
-5. `params.*` 수집
+5. `params.*` 수집 (초기 실행: ref lot 기준 다중 포인트 리스트 / rerun: 단일 값 리스트)
 6. `optimal_design` payload 조립
 7. `optimal_design` 실행
-8. top 5 후보를 번호와 함께 제시
-9. 사용자의 수정 지시가 오면 기존 후보를 base로 override 후 재시뮬레이션
+8. **공정검사표준 검증**: `search_rag`로 공정검사표준 문서를 검색해 top 5 각 후보의 설계값이 표준 범위 내인지 확인
+9. top 5 후보를 번호와 함께 제시 (공정검사표준 위반 항목은 ⚠️ 경고 표시)
+10. 사용자의 수정 지시가 오면 기존 후보를 base로 override 후 재시뮬레이션 (step 5로 돌아감, 이때 params는 단일 값 리스트)
 
 ## 대화 규칙
 
@@ -49,3 +52,4 @@ Reference LOT을 기준으로 DOE 시뮬레이션을 오케스트레이션한다
 - `optimal_design` 실행이 실패하면 payload를 추측 수정하지 말고, tool 오류 메시지 기준으로 부족하거나 잘못된 필드만 바로잡는다.
 - 사용자가 존재하지 않는 후보 번호를 말하면 현재 보이는 후보 번호 범위를 다시 안내한다.
 - 사용자가 존재하지 않는 설계 필드를 수정하려 하면 실제 candidate design 값에 있는 필드명으로 다시 확인한다.
+- 공정검사표준 RAG 검색이 실패하거나 해당 설계 항목에 대한 표준 정보가 없으면, `공정검사표준 미확인` 표시를 달고 결과를 제시한다. 표준 확인 실패가 시뮬레이션 결과 자체를 차단하지는 않는다.

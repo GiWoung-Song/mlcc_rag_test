@@ -283,6 +283,29 @@ Specialty families have their own dimension tables that take priority over nomin
 
 Normal family candidates use nominal size + thickness code for first-pass filtering, then require datasheet verification for the exact physical envelope.
 
+## Condition Relaxation Maps
+
+When `active_lineup_lookup` returns 0 hits, use these ordered sequences to propose the nearest alternative code in each direction.
+
+### Size Relaxation Order (small → large)
+
+`R1` → `02` → `03` → `05` → `10` → `21` → `31` → `32` → `42` → `43` → `55`
+
+Special sizes (`L5`, `L6`, `01`, `19`) do not participate in this linear order. If the current size is special, ask the user to specify the alternative explicitly.
+
+### Voltage Relaxation Order (low → high)
+
+`S (2.5V)` → `R (4V)` → `Q (6.3V)` → `P (10V)` → `O (16V)` → `A (25V)` → `L (35V)` → `B (50V)` → `C (100V)` → `D (200V)` → `E (250V)` → `F (350V)` → `G (500V)` → `H (630V)` → `I (1kV)` → `J (2kV)` → `K (3kV)`
+
+### Capacitance Relaxation
+
+Capacitance does not follow a single code sequence because the 3-digit code encodes the actual value. Instead, move to the nearest E-series nominal in the same decade:
+
+- From `106 (10 uF)`: down → `685 (6.8 uF)`, up → `156 (15 uF)` or `226 (22 uF)`
+- From `475 (4.7 uF)`: down → `335 (3.3 uF)`, up → `515 (5.1 uF)` or `685 (6.8 uF)`
+
+Use the E-12 or E-24 series from the Standard Nominal Series section to find the next value up or down.
+
 ## Catalog Anomalies
 
 - Some new-product rows appear inconsistent with the part-number rule and displayed capacitance. Treat them as anchors, then require datasheet confirmation.

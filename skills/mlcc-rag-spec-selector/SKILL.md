@@ -40,8 +40,17 @@ Read the bundled references as needed:
 6. Build one or more `candidate skeletons` from the catalog evidence. If the request is incomplete, also build a `chip_prod_id lookup pattern` that preserves known code positions and marks unresolved single-character slots with `_`.
 7. If an active-lineup lookup tool is available and the request is partial, ambiguous, or needs current-product confirmation, call that tool with the `chip_prod_id` pattern and get the returned list before trying to force a final answer.
 8. If the DB lookup returns multiple hits, show the list and ask one targeted follow-up question that narrows the unresolved slot or requirement. Continue the conversation instead of picking arbitrarily.
-9. Retrieve `caution_characteristics` only when the user asks for bias, frequency, impedance, or aging behavior. Use those chunks to define what still needs datasheet or measured-data validation.
-10. Synthesize the answer by separating:
+9. If the DB lookup returns zero hits, enter the **condition-relaxation loop**:
+   a. Identify which spec dimensions are encoded in the current skeleton. For example `CL32_106_O____` encodes size (`32` = 1210), capacitance (`106` = 10 uF), and voltage (`O` = 16 V).
+   b. Present these locked dimensions to the user and ask which one they would like to relax — expand upward, downward, or both. Phrase the options concretely:
+      - Size: "사이즈를 한 단계 키워 1812(43)로 검색할까요, 또는 줄여 0805(21)로 검색할까요?"
+      - Capacitance: "용량을 4.7 uF(475)로 낮추거나, 22 uF(226)로 올려 검색할까요?"
+      - Voltage: "전압을 25 V(A)로 올리거나, 10 V(P)로 낮춰 검색할까요?"
+   c. After the user picks a condition to change, rebuild the chip_prod_id skeleton with the new code and run `active_lineup_lookup` again.
+   d. If the retry also returns zero hits, repeat from (b) — offer further relaxation or a different dimension. If the user has already relaxed two or more dimensions without success, suggest broadening the search by using `%` wildcards or leaving more positions as `_`.
+   e. Once hits are found, continue from step 8 (multiple-hit narrowing) or step 10 (synthesis).
+10. Retrieve `caution_characteristics` only when the user asks for bias, frequency, impedance, or aging behavior. Use those chunks to define what still needs datasheet or measured-data validation.
+11. Synthesize the answer by separating:
    - exact catalog matches
    - closest catalog anchors
    - recommended candidate skeletons
@@ -85,6 +94,13 @@ For each DB lookup step:
 - explain what remains ambiguous
 - ask one focused follow-up question if multiple active hits remain
 
+For each condition-relaxation step (zero-hit retry):
+
+- show the original pattern and confirm it returned 0 hits
+- list the locked dimensions with their current values and the nearest alternative codes in each direction (e.g., size up/down, capacitance up/down, voltage up/down)
+- ask the user which dimension to relax and in which direction
+- after rebuilding the skeleton, show the new pattern before querying again
+
 ## Failure Handling
 
 Use explicit guardrail language when evidence is incomplete:
@@ -94,5 +110,7 @@ Use explicit guardrail language when evidence is incomplete:
 - `Exact tail codes and bias-effective capacitance require datasheet or measured-data validation.`
 - `Current DB hits were listed for the partial pattern, but additional constraints are needed before selecting one active product.`
 - `No current DB hits were found for the partial pattern; confirm whether any of the unresolved fields can change.`
+- `조건 완화 검색: [dimension]을(를) [old value] → [new value]로 변경하여 재검색합니다.`
+- `[N]개 조건을 완화했으나 여전히 0건입니다. 와일드카드를 넓히거나 추가 조건 변경이 필요합니다.`
 
 If the user asks for a guarantee that exceeds catalog evidence, refuse the guarantee and provide the strongest catalog-based preselection instead.
