@@ -16,11 +16,12 @@ Additional tools provided:
 """
 
 from pathlib import Path
-
-from google.adk.agents import Agent
+from dotenv import load_dotenv
+import os
+from google.adk.agents import Agent, LlmAgent
 from google.adk.skills import load_skill_from_dir
 from google.adk.tools.skill_toolset import SkillToolset
-
+from google.adk.models.lite_llm import LiteLlm
 from .tools import (
     read_md_file,
     search_rag,
@@ -28,6 +29,8 @@ from .tools import (
     check_optimal_design,
     optimal_design,
 )
+
+load_dotenv()
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _SKILLS_DIR = _PROJECT_ROOT / "skills"
@@ -38,14 +41,9 @@ doe_skill = load_skill_from_dir(_SKILLS_DIR / "mlcc-optimal-design-doe")
 
 mlcc_skill_toolset = SkillToolset(skills=[spec_selector_skill, doe_skill])
 
-root_agent = Agent(
-    model="gemini-2.0-flash",
-    name="mlcc_agent",
-    description=(
-        "삼성전기 MLCC 카탈로그 기반 스펙 선정 및 DOE 최적설계 에이전트. "
-        "고객 스펙 요청을 카탈로그 코드로 변환하고, "
-        "reference LOT 기반 DOE 시뮬레이션을 수행합니다."
-    ),
+root_agent = LlmAgent(
+    model=LiteLlm(model="openai/gpt-5-mini"), # LiteLLM model string format
+    name="openai_agent",
     instruction=(
         "당신은 삼성전기 MLCC 개발자를 도와주는 전문 에이전트입니다.\n"
         "두 가지 skill이 등록되어 있으며, 상황에 맞게 자동으로 활성화됩니다.\n\n"
