@@ -54,7 +54,7 @@ cast_dsgn_thk: [4.75, 4.80, 4.85, 4.90, 4.95, 5.00, 5.05, 5.10, 5.15, 5.20, 5.25
 
 ```python
 optimal_design(
-    lot_id="L240301-A",
+    lot_id="AKB45A2",
     target_electrode_c_avg=10.0,
     target_grinding_l_avg=1.6,
     target_grinding_w_avg=0.8,

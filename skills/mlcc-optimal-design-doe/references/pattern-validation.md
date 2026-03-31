@@ -11,7 +11,7 @@
 ### 2. check_optimal_design 실행
 
 ```
-check_optimal_design(lot_id="L240215-B")
+check_optimal_design(lot_id="AKB45A2")
 ```
 
 반환 예시:
@@ -32,7 +32,7 @@ check_optimal_design(lot_id="L240215-B")
 응답 예시:
 
 ```
-reference LOT L240215-B 검증 결과:
+reference LOT AKB45A2 검증 결과:
 
 ✅ 충족인자:
 - cast_dsgn_thk (Sheet T 두께): 4.8 um
@@ -56,7 +56,7 @@ reference LOT L240215-B 검증 결과:
 
 ```
 update_lot_reference(
-  lot_id="L240215-B",
+  lot_id="AKB45A2",
   factors={"ldn_avr_value": 3.0, "cover_sheet_thk": 28, "gap_sheet_thk": 1.2, "screen_mrgn_widh": 55}
 )
 ```

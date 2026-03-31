@@ -41,7 +41,7 @@
 
 ```python
 reliability_simulation(
-    lot_id="L240301-A",
+    lot_id="AKB45A2",
     active_layer=158,
     ldn_avr_value=3.0,
     cast_dsgn_thk=5.0,

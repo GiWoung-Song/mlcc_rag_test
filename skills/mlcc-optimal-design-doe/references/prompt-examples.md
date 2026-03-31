@@ -15,7 +15,7 @@
 
 ### Example 1
 
-`lot_id 123456을 reference로 써서 최적설계 돌려줘.`
+`lot_id AKB45A2을 reference로 써서 최적설계 돌려줘.`
 
 기대 동작:
 
@@ -25,7 +25,7 @@
 
 ### Example 2
 
-`reference lot 123456 기준으로 타겟용량 10uF, 타겟 연마T 0.8, 연마L 1.6, 연마W 0.8, DC용량 10.5uF 타겟 맞추는 설계 추천해줘.`
+`reference lot AKB45A2 기준으로 타겟용량 10uF, 타겟 연마T 0.8, 연마L 1.6, 연마W 0.8, DC용량 10.5uF 타겟 맞추는 설계 추천해줘.`
 
 기대 동작:
 
@@ -170,13 +170,13 @@
 
 User prompt:
 
-`lot_id L240215-B 검증하고, 부족인자 있으면 내가 값 넣을게.`
+`lot_id AKB45A2 검증하고, 부족인자 있으면 내가 값 넣을게.`
 
 ---
 
 **Step 1: Reference 검증**
 
-`check_optimal_design(lot_id="L240215-B")` 실행 결과:
+`check_optimal_design(lot_id="AKB45A2")` 실행 결과:
 
 ✅ 충족인자:
 | 인자 | 값 |
@@ -198,7 +198,7 @@ User: `ldn_avr_value 3.0, cover_sheet_thk 28, gap_sheet_thk 1.2, screen_mrgn_wid
 
 **Step 2: 부족인자 반영**
 
-`update_lot_reference(lot_id="L240215-B", factors={...})` 실행 결과:
+`update_lot_reference(lot_id="AKB45A2", factors={...})` 실행 결과:
 
 | 인자 | 값 | 상태 |
 |---|---|---|
