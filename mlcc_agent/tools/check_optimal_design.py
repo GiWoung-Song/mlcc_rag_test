@@ -3,7 +3,8 @@
 In production, this tool verifies whether a given lot_id has
 sufficient reference data to run DOE simulation.
 
-This mock returns sample responses for known test lot IDs.
+This mock returns sample responses for known test lot IDs,
+including the actual factor values for 충족인자.
 """
 import os
 import math
