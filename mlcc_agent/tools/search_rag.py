@@ -12,7 +12,7 @@ import json
 from pathlib import Path
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-_CHUNKS_PATH = _PROJECT_ROOT / "mlcc_catalog_rag_chunks.jsonl"
+_CHUNKS_PATH = _PROJECT_ROOT / "mlcc_catalog_rag_chunks_v2.jsonl"
 
 _chunks: list[dict] | None = None
 

@@ -6,6 +6,7 @@ to find currently flowing chip_prod_id rows.
 This mock returns sample data so the agent dialogue flow can be
 tested without a real DB connection.
 """
+from ..db import db
 
 # Sample active lineup data for testing
 _SAMPLE_LINEUP = [
@@ -25,46 +26,53 @@ _SAMPLE_LINEUP = [
     "CL21B106KOQNNNE",
 ]
 
-
 def active_lineup_lookup(chip_prod_id: str) -> dict:
-    """Look up currently flowing products by chip_prod_id pattern.
-
-    Searches the mdh_continous_view_3 view for chip_prod_id rows
-    matching the given pattern. Use '_' for unknown single-character
-    positions and '%' for variable-length wildcards if needed.
-
+    """
+    Look up currently flowing products by chip_prod_id pattern.
+    
+    Searches the mdh_continous_view_3 view for chip_prod_id rows matching the given pattern.
+    Use '_' for unknown single-character positions and '%' for variable-length wildcards.
+    
     Args:
         chip_prod_id: Full or partial chip_prod_id pattern.
-                      Examples: "CL32_106_O____", "CL03A515MR3____",
-                      "%CL32_106_O____%"
-
-    Returns:
-        A dict with 'status', 'pattern', 'hit_count', and 'hits'.
     """
     pattern = chip_prod_id.strip()
-
-    # Remove surrounding % for matching, but keep _ as single-char wildcard
-    clean = pattern.strip("%")
-
-    hits = []
-    for prod_id in _SAMPLE_LINEUP:
-        if _matches(prod_id, clean):
-            hits.append(prod_id)
-
+    
+    # SQL 파라미터 설정
+    params_chip = {'chip_prod_id': f'%{pattern}%'}
+    
+    # SQL 쿼리 가독성 정렬
+    sql = """
+        SELECT DISTINCT ON (lot_count_12mon, chip_prod_id, lot_type, powder_size)
+            chip_prod_id, 
+            lot_type, 
+            temperature, 
+            voltage, 
+            size_detail, 
+            base_volume, 
+            powder_size, 
+            paste, 
+            design_input_date, 
+            powder_name, 
+            lot_count_12mon
+        FROM 
+            public.mdh_contiguous_condition_view_dsgnagent
+        WHERE 
+            chip_prod_id ILIKE %(chip_prod_id)s
+        ORDER BY 
+            lot_count_12mon DESC, 
+            chip_prod_id, 
+            lot_type, 
+            powder_size;
+    """
+    
+    # DB 실행 및 결과 로깅
+    results = db.execute_read(sql, params_chip)
+    print(f"Lookup results for {pattern}: {len(results)} hits found.")
+    
     return {
         "status": "success",
         "pattern": pattern,
-        "hit_count": len(hits),
-        "hits": hits,
+        "hit_count": len(results),
+        "hits": results,
     }
-
-
-def _matches(prod_id: str, pattern: str) -> bool:
-    """Simple pattern match: '_' matches any single char."""
-    if len(pattern) != len(prod_id):
-        # If lengths differ, try substring match
-        return pattern.replace("_", "") != "" and all(
-            pc == "_" or pc == c
-            for pc, c in zip(pattern, prod_id[: len(pattern)])
-        )
-    return all(pc == "_" or pc == c for pc, c in zip(pattern, prod_id))
