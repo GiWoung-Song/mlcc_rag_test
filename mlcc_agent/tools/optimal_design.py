@@ -10,11 +10,61 @@ params.* are lists:
   - Multi-point list for DOE sweep: [4.8, 4.9, 5.0, 5.1, 5.2]
   - Single-value list for rerun/pinpoint: [5.0]
 """
+import requests
+import os
+from ..utils.utils import fill_missing_columns, make_json_serializable
+from google.adk.tools.tool_context import ToolContext
+from ..schema.grid_search_input import API_FULL_COLUMN_LIST, TARGET_COLMNS
+from ..db import db
 
-import random
+GRID_SEARCH_API_URL = os.getenv("GRID_SEARCH_API_URL")
 
+def _get_sim_final_size(datas):
+    ref_data = datas.get("datas", {}).get("ref", {})
+    chip_prod_id = ref_data.get("chip_prod_id")
+    active_powder_base = ref_data.get("active_powder_base")
+    active_powder_additives = ref_data.get("active_powder_additives")
+
+    query = """ 
+        SELECT elec_l_thk, elec_w_thk, elec_t_thk 
+        FROM public.mdh_elec_thk 
+        WHERE chip_prod_id = %s 
+          AND active_powder_base = %s 
+          AND active_powder_additives = %s 
+    """
+    
+    db_results = db.execute_read(query, (chip_prod_id, active_powder_base, active_powder_additives))
+
+    if db_results:
+        elec_l_thk = db_results[0]["elec_l_thk"]
+        elec_w_thk = db_results[0]["elec_w_thk"]
+        elec_t_thk = db_results[0]["elec_t_thk"]
+        
+        sim_list = datas.get("datas", {}).get("sim", [])
+        for item in sim_list:
+            try:
+                item["final_l_pred"] = float(item.get("grinding_l_avg", 0)) + (float(elec_l_thk) * 1000)
+            except:
+                item["final_l_pred"] = None
+            try:
+                item["final_w_pred"] = float(item.get("grinding_w_avg", 0)) + (float(elec_w_thk) * 1000)
+            except:
+                item["final_w_pred"] = None
+            try:
+                item["final_t_pred"] = float(item.get("grinding_t_avg", 0)) + (float(elec_t_thk) * 1000)
+            except:
+                item["final_t_pred"] = None
+        return datas
+    else:
+        sim_list = datas.get("datas", {}).get("sim", [])
+        for item in sim_list:
+            item["final_l_pred"] = None
+            item["final_w_pred"] = None
+            item["final_t_pred"] = None
+        return datas
 
 def optimal_design(
+    tool_context: ToolContext,
     lot_id: str,
     target_electrode_c_avg: float,
     target_grinding_l_avg: float,
@@ -32,102 +82,89 @@ def optimal_design(
     total_cover_layer_num: list[int],
     gap_sheet_thk: list[float],
 ) -> dict:
-    """Run DOE optimal design simulation.
-
-    Calculates the top 5 optimal MLCC design candidates based on the
-    reference LOT, target specifications, and DOE input parameters.
-
-    Each params field is a list of values to explore:
-    - For DOE sweep: provide multiple points, e.g. [4.8, 4.9, 5.0, 5.1, 5.2]
-    - For rerun with specific values: provide a single-element list, e.g. [5.0]
-
-    Args:
-        lot_id: Reference LOT identifier (must pass check_optimal_design first).
-        target_electrode_c_avg: Target electrode capacitance average (uF).
-        target_grinding_l_avg: Target grinding L size average (mm).
-        target_grinding_w_avg: Target grinding W size average (mm).
-        target_grinding_t_avg: Target grinding T size average (mm).
-        target_dc_cap: Target DC capacitance (uF).
-        active_layer: Active layer count values (EA, list).
-        ldn_avr_value: Laydown average values (list).
-        cast_dsgn_thk: Sheet T thickness values in um (list).
-        screen_chip_size_leng: Screen chip size length values in um (list).
-        screen_mrgn_leng: Screen margin length values in um (list).
-        screen_chip_size_widh: Screen chip size width values in um (list).
-        screen_mrgn_widh: Screen margin width values in um (list).
-        cover_sheet_thk: Cover sheet thickness values in um (list).
-        total_cover_layer_num: Total cover layer number (upper+lower) values (EA, list).
-        gap_sheet_thk: Gap sheet thickness values in um (list).
-
-    Returns:
-        A dict with 'status', 'lot_id', 'targets', and 'top_candidates'.
-        Each candidate contains design values and predicted performance.
     """
-    # Use center values as seed for reproducibility
-    center_cast = cast_dsgn_thk[len(cast_dsgn_thk) // 2]
-    center_active = active_layer[len(active_layer) // 2]
-    random.seed(hash((lot_id, target_electrode_c_avg, center_cast, center_active)) % 2**32)
+    Run DOE optimal design simulation. 
+    Calculates the top 5 optimal MLCC design candidates based on the reference LOT, 
+    target specifications, and DOE input parameters.
+    """
+    simulation_ver = 'ver4'
+    lot_detail = tool_context.state.get(lot_id)
 
-    candidates = []
-    for rank in range(1, 6):
-        # Pick from the provided parameter ranges
-        al = random.choice(active_layer) + random.randint(-2, 2)
-        lav = random.choice(ldn_avr_value) + random.uniform(-0.05, 0.05)
-        cdt = random.choice(cast_dsgn_thk) + random.uniform(-0.1, 0.1)
-        scsl = random.choice(screen_chip_size_leng) + random.uniform(-5, 5)
-        sml = random.choice(screen_mrgn_leng) + random.uniform(-2, 2)
-        scsw = random.choice(screen_chip_size_widh) + random.uniform(-5, 5)
-        smw = random.choice(screen_mrgn_widh) + random.uniform(-2, 2)
-        cst = random.choice(cover_sheet_thk) + random.uniform(-1, 1)
-        tcln = random.choice(total_cover_layer_num) + random.randint(-1, 1)
-        gst = random.choice(gap_sheet_thk) + random.uniform(-0.5, 0.5)
+    # 검증 프로세스
+    try:
+        if tool_context.state['validation'][lot_id]['부족인자'][simulation_ver] != []:
+            return {
+                "status": "error", 
+                "reason": f"check_optimal_design 검증에서 {simulation_ver}에 대해 부족인자가 존재함."
+            }
+    except:
+        return {
+            "status": "error", 
+            "reason": "check_optimal_design 검증이 되지 진행되지 않았음."
+        }
 
-        pred_electrode_c = target_electrode_c_avg * random.uniform(0.97, 1.04)
-        pred_grinding_l = target_grinding_l_avg * random.uniform(0.98, 1.02)
-        pred_grinding_w = target_grinding_w_avg * random.uniform(0.99, 1.01)
-        pred_grinding_t = target_grinding_t_avg * random.uniform(0.98, 1.02)
-        pred_dc_cap = target_dc_cap * random.uniform(0.97, 1.04)
+    processed_data = fill_missing_columns(lot_detail, API_FULL_COLUMN_LIST)
+    
+    if processed_data['grinding_w_avg'] == -1:
+        processed_data['grinding_w_avg'] = processed_data['grinding_t_avg']
 
-        candidates.append({
-            "rank": rank,
-            "design": {
-                "active_layer": al,
-                "ldn_avr_value": round(lav, 3),
-                "cast_dsgn_thk": round(cdt, 2),
-                "screen_chip_size_leng": round(scsl, 1),
-                "screen_mrgn_leng": round(sml, 1),
-                "screen_chip_size_widh": round(scsw, 1),
-                "screen_mrgn_widh": round(smw, 1),
-                "cover_sheet_thk": round(cst, 1),
-                "total_cover_layer_num": tcln,
-                "gap_sheet_thk": round(gst, 2),
-            },
-            "predicted": {
-                "electrode_c_avg": round(pred_electrode_c, 3),
-                "grinding_l_avg": round(pred_grinding_l, 4),
-                "grinding_w_avg": round(pred_grinding_w, 4),
-                "grinding_t_avg": round(pred_grinding_t, 4),
-                "dc_cap": round(pred_dc_cap, 3),
-            },
-            "gap": {
-                "electrode_c_avg_delta": round(pred_electrode_c - target_electrode_c_avg, 3),
-                "grinding_l_avg_delta": round(pred_grinding_l - target_grinding_l_avg, 4),
-                "grinding_w_avg_delta": round(pred_grinding_w - target_grinding_w_avg, 4),
-                "grinding_t_avg_delta": round(pred_grinding_t - target_grinding_t_avg, 4),
-                "dc_cap_delta": round(pred_dc_cap - target_dc_cap, 3),
-            },
-        })
+    payload = {
+        "sim_type": f"{simulation_ver}",
+        "data": {
+            "ref": processed_data,
+            "sim": processed_data
+        },
+        "targets": {
+            "target_electrode_c_avg": round(target_electrode_c_avg, 5),
+            "target_grinding_l_avg": round(target_grinding_l_avg, 1),
+            "target_grinding_w_avg": round(target_grinding_w_avg, 1),
+            "target_grinding_t_avg": round(target_grinding_t_avg, 1),
+            "target_dc_cap": -1
+        },
+        "params": {
+            "active_layer": active_layer,
+            "ldn_avr_value": ldn_avr_value,
+            "cast_dsgn_thk": cast_dsgn_thk,
+            "screen_chip_size_leng": screen_chip_size_leng,
+            "screen_mrgn_leng": screen_mrgn_leng,
+            "screen_chip_size_widh": screen_chip_size_widh,
+            "screen_mrgn_widh": screen_mrgn_widh,
+            "cover_sheet_thk": cover_sheet_thk,
+            "total_cover_layer_num": total_cover_layer_num,
+            "gap_sheet_thk": gap_sheet_thk,
+        }
+    }
 
-    # Sort by combined gap (capacity weights higher)
-    candidates.sort(
-        key=lambda c: (
-            abs(c["gap"]["electrode_c_avg_delta"]) * 2
-            + abs(c["gap"]["grinding_t_avg_delta"]) * 10
-            + abs(c["gap"]["dc_cap_delta"]) * 2
-        )
-    )
-    for i, c in enumerate(candidates, 1):
-        c["rank"] = i
+    payload['data']['sim']['optical_connectivity'] = 0.9
+    clean_payload = make_json_serializable(payload)
+    
+    response = requests.post(GRID_SEARCH_API_URL, json=clean_payload, timeout=300)
+    response.raise_for_status()
+    datas = response.json()
+
+    if not datas.get("datas").get("sim"):
+        return {'status': 'error', 'error_reason': "시뮬레이션 결과 만족하는 설계값이 없음"}
+
+    datas = _get_sim_final_size(datas)
+
+    length = len(datas["datas"]["sim"])
+    datas["datas"]["sim"].insert(0, datas["datas"]["ref"])
+    datas["datas"]["sim"][0]["rank"] = "reference"
+
+    top_k_value = 5
+    if length < top_k_value:
+        result = datas["datas"]["sim"][:length + 1]
+    else:
+        result = datas["datas"]["sim"][:6]
+
+    filtered_result = [
+        {
+            key: round(float(row[key]), 4) if key in row and row[key] is not None 
+                 and str(row[key]).replace('.', '', 1).isdigit() 
+                 else row.get(key) 
+            for key in TARGET_COLMNS
+        } for row in result
+    ]
 
     return {
         "status": "success",
@@ -139,5 +176,5 @@ def optimal_design(
             "target_grinding_t_avg": target_grinding_t_avg,
             "target_dc_cap": target_dc_cap,
         },
-        "top_candidates": candidates,
+        "top_candidates": filtered_result,
     }
