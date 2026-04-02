@@ -1,6 +1,7 @@
 """
 search_rag tool using ChromaDB + internal embedding API.
-This version queries the Chroma collection populated from mlcc_catalog_rag_chunks_v2.jsonl 
+This version queries the Chroma collection populated from
+mlcc_catalog_rag_chunks_v2_partnumber_focused.jsonl
 and uses internal embedding API for query vectorization.
 """
 
@@ -35,7 +36,7 @@ def _get_text_embedding(text_list: List[str]) -> Dict[str, Any]:
         response = requests.post(
             TEXT_EMBEDDING_MODEL_URL,
             json={
-                "input": text_list, 
+                "input": text_list,
                 "model": TEXT_EMBEDDING_MODEL_NAME
             },
             headers={
@@ -45,13 +46,13 @@ def _get_text_embedding(text_list: List[str]) -> Dict[str, Any]:
             timeout=TEXT_EMBEDDING_TIMEOUT_SEC,
         )
         response.raise_for_status()
-        
+
         payload = response.json()
         res_data = payload.get("data", [])
         embeddings: List[List[float]] = [item.get("embedding", []) for item in res_data]
-        
+
         return {"status": "success", "outputs": embeddings}
-    
+
     except Exception as e:
         return {"status": "error", "error": str(e), "outputs": []}
 
@@ -59,10 +60,10 @@ def _get_text_embedding(text_list: List[str]) -> Dict[str, Any]:
 def _get_collection():
     """Lazy-init Chroma collection handle."""
     global _client, _collection
-    
+
     if _collection is not None:
         return _collection
-    
+
     try:
         _client = chromadb.PersistentClient(path=str(_DB_DIR))
         _collection = _client.get_collection(name=_COLLECTION_NAME)
@@ -71,17 +72,53 @@ def _get_collection():
         return None
 
 
-def search_rag(query: str, top_k: int = 5) -> dict:
-    """
-    Search the SEMCO MLCC catalog vector DB. 
-    Retrieves chunks from the MLCC catalog that are relevant to the query. 
-    
+def _build_where_clause(
+    search_group: str | None,
+    position: int | None,
+    chunk_type: str | None,
+) -> dict | None:
+    """Build a ChromaDB where clause from metadata filters."""
+    conditions = []
+    if search_group is not None:
+        conditions.append({"search_group": {"$eq": search_group}})
+    if position is not None:
+        conditions.append({"position": {"$eq": position}})
+    if chunk_type is not None:
+        conditions.append({"chunk_type": {"$eq": chunk_type}})
+
+    if not conditions:
+        return None
+    if len(conditions) == 1:
+        return conditions[0]
+    return {"$and": conditions}
+
+
+def search_rag(
+    query: str,
+    top_k: int = 5,
+    search_group: str | None = None,
+    position: int | None = None,
+    chunk_type: str | None = None,
+) -> dict:
+    """Search the SEMCO MLCC catalog vector DB.
+
+    Retrieves chunks from the MLCC catalog that are relevant to the query.
+    Use metadata filters to narrow results and avoid noisy broad searches.
+    For code mapping lookups (positions 1-7), prefer reading
+    catalog-codebook.md directly instead of calling this tool.
+
     Args:
         query: Natural-language or code-based search query.
         top_k: Number of results to return.
+        search_group: Filter by search_group metadata. Common values:
+                      "mapping_core", "family_reference",
+                      "caution_reference", "dimension_reference".
+        position: Filter by part number position (1-11).
+        chunk_type: Filter by chunk type, e.g. "mapping_row",
+                    "family_reference", "dimension_row".
     """
     query = (query or "").strip()
-    
+
     if not query:
         return {
             "status": "error",
@@ -127,13 +164,20 @@ def search_rag(query: str, top_k: int = 5) -> dict:
 
     query_emb = outputs[0]
 
-    # 2. Vector Search
+    # 2. Build metadata where clause
+    where_clause = _build_where_clause(search_group, position, chunk_type)
+
+    # 3. Vector Search
     try:
-        resp = collection.query(
-            query_embeddings=[query_emb],
-            n_results=top_k,
-            include=["documents", "metadatas", "distances"],
-        )
+        query_kwargs: dict[str, Any] = {
+            "query_embeddings": [query_emb],
+            "n_results": top_k,
+            "include": ["documents", "metadatas", "distances"],
+        }
+        if where_clause is not None:
+            query_kwargs["where"] = where_clause
+
+        resp = collection.query(**query_kwargs)
     except Exception as e:
         return {
             "status": "error",
@@ -143,7 +187,7 @@ def search_rag(query: str, top_k: int = 5) -> dict:
             "results": [],
         }
 
-    # 3. Parse Results
+    # 4. Parse Results
     docs = (resp.get("documents") or [[]])[0]
     metas = (resp.get("metadatas") or [[]])[0]
     dists = (resp.get("distances") or [[]])[0]
@@ -152,22 +196,30 @@ def search_rag(query: str, top_k: int = 5) -> dict:
     results = []
     for i in range(len(docs)):
         dist = dists[i] if i < len(dists) else None
-        # Convert distance to a similarity score (approximate)
         score = None if dist is None else round(1.0 / (1.0 + float(dist)), 4)
-        
+
         chunk_id = ids[i] if i < len(ids) else "unknown"
-        if i < len(metas) and isinstance(metas[i], dict):
-            chunk_id = metas[i].get("id", chunk_id)
+        meta = metas[i] if i < len(metas) and isinstance(metas[i], dict) else {}
+        if meta:
+            chunk_id = meta.get("id", chunk_id)
 
         results.append({
             "chunk_id": chunk_id,
             "score": score,
             "text": (docs[i] or "")[:2000],
+            "metadata": meta,
         })
 
     return {
         "status": "success",
         "query": query,
+        "filters": {
+            k: v for k, v in [
+                ("search_group", search_group),
+                ("position", position),
+                ("chunk_type", chunk_type),
+            ] if v is not None
+        },
         "result_count": len(results),
         "results": results,
     }

@@ -17,7 +17,7 @@ import chromadb
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_JSONL = PROJECT_ROOT / "mlcc_catalog_rag_chunks_v2.jsonl"
+DEFAULT_JSONL = PROJECT_ROOT / "mlcc_catalog_rag_chunks_v2_partnumber_focused.jsonl"
 DEFAULT_DB_DIR = PROJECT_ROOT / "chroma_db"
 COLLECTION_NAME = "semco_mlcc_catalog_2025"
 

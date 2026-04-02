@@ -1,10 +1,10 @@
 # 검색 플레이북
 
-`search_rag`를 구동하고 최종 답변을 구성할 때 이 reference를 참조한다.
+코드 매핑은 `catalog-codebook.md`에서 직접 해석하고, `search_rag`는 맥락 정보가 필요할 때만 사용한다. 이 reference는 search_rag 호출 시점과 방법, 그리고 최종 답변 구성을 안내한다.
 
 ## 목차
 
-- 검색 순서
+- 검색 Phase
 - 랭킹 규칙
 - 응답 형식
 - 예시 처리 패턴
@@ -12,78 +12,48 @@
 - 한국어 쿼리 확장
 - 가드레일 문구
 
-## 검색 순서
+## 검색 Phase
 
-### 1. 코드 테이블 먼저 해석
+### Phase 0: 코드 매핑 확정 (search_rag 호출 없음)
 
-타깃:
+**catalog-codebook.md를 직접 읽어서 해결한다.** search_rag를 호출하지 않는다.
 
-- `part_numbering`
+대상: 온도특성, 전압, 용량, 편차, 사이즈, 두께 (positions 1-7)
 
-목표:
+다중 조건이 들어와도 각 position은 독립적이므로 codebook에서 모든 position을 동시에 확정한다. 예시:
+- `A` → 온도특성 X5R (codebook 온도특성 코드 표)
+- `4V` → 정격전압 코드 R (codebook 정격전압 코드 표)
+- `4.8uF` → 표준 명목 4.7uF(475), 5.1uF(515) (codebook E-series 규칙)
+- `M` → 편차 +/-20% (codebook 용량 편차 코드 표)
+- `L<=690um, W<=390um` → 사이즈 코드 03(0201/0603) (codebook 사이즈 코드 표)
 
-- 온도특성, 전압, 용량, 편차, 사이즈, 두께 제약조건을 코드 후보로 매핑
+### Phase 1: 패밀리/신뢰성 판단 (조건부 search_rag 1회)
 
-쿼리 패턴:
+적용처 힌트(산업용, 옥외, 저소음, 저ESL 등)가 있을 때만 search_rag를 **1회** 호출한다. 힌트가 없으면 Normal Standard로 가정하고 이 Phase를 건너뛴다.
 
-- `temperature characteristic A X5R`
-- `온도특성 A X5R`
-- `capacitance code 4.7uF 475`
-- `기준용량 4.7uF 475`
-- `R 4.0Vdc rated voltage code`
-- `정격전압 4V code R`
-- `M tolerance code +/-20%`
-- `M편차 +/-20%`
-- `size code 0201 0603`
-- `L 690um W 390um 0201 0603`
-- `0201 0603 thickness code 0.30`
-- `T 550um thickness code`
-
-### 2. 패밀리 및 신뢰성 해석
-
-타깃:
-
-- `product_family`
-- `reliability_level`
-
-목표:
-
-- Standard vs High Level I vs High Level II 선택
-- 특수 패밀리 필요 여부 판단
+쿼리 작성법:
+- `search_group="family_reference"` 필터를 반드시 사용해 패밀리 관련 청크만 조회
+- 적용처 키워드를 포함한 쿼리 구성
 
 쿼리 패턴:
 
-- `standard MLCC wide lineup`
-- `high level I industrial humidity reliability`
-- `high level II outdoor 85 85 1000h`
-- `산업용 high level II 85C 85RH 1000h`
-- `low ESL high speed IC`
-- `low acoustic noise piezo PMIC`
-- `저소음 PMIC DC-DC`
+- `search_rag("high level II outdoor 85 85 1000h reliability", search_group="family_reference")`
+- `search_rag("low ESL high speed IC decoupling", search_group="family_reference")`
+- `search_rag("low acoustic noise piezo PMIC", search_group="family_reference")`
 
-### 3. 인접 예시 파트 조회
+### Phase 2: 앵커 파트 탐색 (조건부 search_rag 1회)
 
-타깃:
-
-- `new_product`
-
-목표:
-
-- 사이즈, 온도특성, 전압, 편차, 패밀리, 명목 용량 기준으로 가장 가까운 카탈로그 앵커 탐색
+Phase 0에서 확정된 코드 조합을 사용해 카탈로그 예시 파트를 **1회** 검색한다. 확정된 사이즈+온도특성+전압+용량으로 좁은 쿼리를 구성하면 정확도가 높아진다.
 
 쿼리 패턴:
 
-- `0201 0603 4.7uF X5R 4.0V +/-20`
-- `0201 0603 4.7uF class II`
-- `0201 0603 4.7uF X5R 4V M편차`
-- `0603 1608 47uF X5R 6.3V`
-- `1206 3216 220uF X5R 6.3V`
+- `search_rag("0201 0603 X5R 4.7uF 4V", top_k=5)`
+- `search_rag("0603 1608 X5R 47uF 6.3V", top_k=5)`
+- `search_rag("1206 3216 X5R 220uF 6.3V", top_k=5)`
 
-### 4. 모호성이 남으면 활성 라인업 확인
+### Phase 3: 활성 라인업 확인 (search_rag 아님)
 
-타깃:
-
-- 입력 파라미터 `chip_prod_id`를 사용하는 활성 라인업 DB 조회 도구
+`active_lineup_lookup` 또는 `search_query_database` 도구를 사용한다.
 
 목표:
 
@@ -102,23 +72,18 @@
 - 1건 반환 시: 남은 카탈로그 제약 대비 검증 계속
 - 0건 반환 시: 카탈로그 스켈레톤을 유지하고 어떤 미해결 필드를 변경할 수 있는지 질문
 
-### 5. 검증 전용 특성 조회 (필요 시)
+### Phase 4: 검증 전용 특성 조회 (요청 시 search_rag 1회)
 
-타깃:
+사용자가 DC 바이어스, AC 전압, 임피던스 등 검증 항목을 명시적으로 요청할 때만 호출한다.
 
-- `caution_characteristics`
-
-목표:
-
-- 요청된 거동 중 검증 항목으로만 남겨야 하는 것을 판별
+쿼리 작성법:
+- `search_group="caution_reference"` 필터 사용
 
 쿼리 패턴:
 
-- `DC bias characteristics X5R sample`
-- `AC voltage characteristics class II`
-- `effective capacitance high frequency low field`
-- `impedance characteristic SRF ESR ESL`
-- `1V DC bias 고주파 유효용량`
+- `search_rag("DC bias characteristics X5R sample", search_group="caution_reference")`
+- `search_rag("effective capacitance high frequency low field", search_group="caution_reference")`
+- `search_rag("impedance characteristic SRF ESR ESL", search_group="caution_reference")`
 
 ## 랭킹 규칙
 
